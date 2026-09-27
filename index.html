@@ -12,11 +12,11 @@
   <!-- Helper Libraries for Screenshots & Word Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   
-  <!-- docx library with fallback -->
-  <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.js"></script>
+  <!-- Robust docx library bundles -->
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.2.3/build/index.umd.js"></script>
   <script>
     if (typeof window.docx === 'undefined') {
-      document.write('<script src="https://unpkg.com/docx@8.2.2/build/index.js"><\/script>');
+      document.write('<script src="https://unpkg.com/docx@8.2.3/build/index.umd.js"><\/script>');
     }
   </script>
 
@@ -45,10 +45,10 @@
       margin-left: -340px;
     }
 
-    /* Toggle Button Positioned Below Zoom Controls */
+    /* Toggle Button Positioned Below Map Zoom Controls */
     .toggle-btn {
       position: absolute;
-      top: 80px; /* Shifted down to clear map zoom (+/-) controls */
+      top: 80px; 
       left: 348px;
       z-index: 20;
       width: 32px;
@@ -80,12 +80,20 @@
     .btn-draw.active { background: #ef4444; }
     .btn-save { background: #6366f1; }
     .btn-export { background: #059669; }
+    .btn-new { background: #64748b; width: auto; padding: 0 12px; white-space: nowrap; }
+    
     .saved-card { background: white; border: 1px solid #cbd5e1; padding: 10px; border-radius: 4px; }
+    .saved-card.active-card { border-color: #6366f1; background: #f0f3ff; }
     .saved-wkt { font-family: monospace; font-size: 11px; color: #64748b; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin: 4px 0 8px; }
     .card-actions { display: flex; gap: 6px; }
     .btn-sm { padding: 4px 8px; font-size: 12px; }
     .btn-del { background: #ef4444; }
     .btn-load { background: #3b82f6; }
+    
+    /* Search Box */
+    .search-box { display: flex; gap: 6px; }
+    .search-box input { margin-top: 0; }
+    .search-box button { width: auto; margin-top: 0; padding: 0 12px; background: #0284c7; }
   </style>
 </head>
 <body>
@@ -95,8 +103,20 @@
   <aside class="sidebar" id="sidebar">
     <h2 style="margin:0; font-size: 18px;">WKT Playground</h2>
 
+    <!-- Address Search Section -->
     <div>
-      <label>Shape Label</label>
+      <label>Search Location</label>
+      <div class="search-box">
+        <input type="text" id="searchInput" placeholder="City, street, landmark..." onkeydown="if(event.key==='Enter') searchAddress()" />
+        <button onclick="searchAddress()">🔍</button>
+      </div>
+    </div>
+
+    <div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <label>Shape Label</label>
+        <button class="btn-new btn-sm" onclick="clearActiveSelection()" title="Clear active shape selection to create a new entry">➕ New</button>
+      </div>
       <input type="text" id="shapeLabel" placeholder="e.g. Downtown District" />
     </div>
 
@@ -110,7 +130,7 @@
       <button id="drawBtn" class="btn-draw" onclick="toggleDraw()">✏️ Draw Polygon</button>
     </div>
 
-    <button class="btn-save" onclick="saveCurrentShape()">💾 Save to List</button>
+    <button id="saveBtn" class="btn-save" onclick="saveCurrentShape()">💾 Save Shape</button>
     <button class="btn-export" id="exportBtn" onclick="exportToWord()">📄 Export Word Document</button>
 
     <hr style="width:100%; border:0; border-top: 1px solid #cbd5e1; margin: 4px 0;" />
@@ -127,6 +147,8 @@
 </div>
 
 <script>
+  let activeEditingId = null; // Tracks current saved shape ID for updating/overwriting
+
   // High-Contrast Vector Styling
   const defaultStyle = new ol.style.Style({
     fill: new ol.style.Fill({
@@ -165,7 +187,7 @@
     })
   });
 
-  // Modify Interaction for Shape Editing
+  // Modify Interaction for Dynamic Vertex Editing
   const modify = new ol.interaction.Modify({ 
     source: vectorSource,
     style: new ol.style.Style({
@@ -189,18 +211,40 @@
     }
   });
 
+  // Address Geocoding via Nominatim
+  async function searchAddress() {
+    const query = document.getElementById('searchInput').value.trim();
+    if (!query) return;
+
+    try {
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`);
+      const results = await response.json();
+
+      if (results && results.length > 0) {
+        const topResult = results[0];
+        const lon = parseFloat(topResult.lon);
+        const lat = parseFloat(topResult.lat);
+        
+        map.getView().animate({
+          center: ol.proj.fromLonLat([lon, lat]),
+          zoom: 14,
+          duration: 800
+        });
+      } else {
+        alert('Address or location not found.');
+      }
+    } catch (err) {
+      alert('Error searching for address.');
+    }
+  }
+
   // Sidebar Collapse Function
   function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('toggleBtn');
     
     sidebar.classList.toggle('collapsed');
-    
-    if (sidebar.classList.contains('collapsed')) {
-      toggleBtn.innerText = '»';
-    } else {
-      toggleBtn.innerText = '«';
-    }
+    toggleBtn.innerText = sidebar.classList.contains('collapsed') ? '»' : '«';
     
     setTimeout(() => { map.updateSize(); }, 300);
   }
@@ -254,7 +298,7 @@
     }
   }
 
-  // LocalStorage Controls
+  // LocalStorage & Save / Update Management
   function getSavedShapes() {
     return JSON.parse(localStorage.getItem('saved_wkt_shapes') || '[]');
   }
@@ -271,9 +315,10 @@
 
     shapes.forEach(item => {
       const card = document.createElement('div');
-      card.className = 'saved-card';
+      const isActive = item.id === activeEditingId;
+      card.className = `saved-card ${isActive ? 'active-card' : ''}`;
       card.innerHTML = `
-        <div style="font-weight:bold; font-size:13px;">${item.label}</div>
+        <div style="font-weight:bold; font-size:13px;">${item.label} ${isActive ? '<span style="font-size:10px; color:#6366f1;">(Editing)</span>' : ''}</div>
         <div class="saved-wkt">${item.wkt}</div>
         <div class="card-actions">
           <button class="btn-sm btn-load" onclick="loadShape(${item.id})">Load & Edit</button>
@@ -289,14 +334,26 @@
     const label = document.getElementById('shapeLabel').value.trim();
     if (!wkt) return;
 
-    const shapes = getSavedShapes();
-    shapes.push({
-      id: Date.now(),
-      label: label || `Shape ${shapes.length + 1}`,
-      wkt: wkt
-    });
+    let shapes = getSavedShapes();
+
+    if (activeEditingId) {
+      // Update existing saved shape
+      shapes = shapes.map(s => {
+        if (s.id === activeEditingId) {
+          return { ...s, label: label || s.label, wkt: wkt };
+        }
+        return s;
+      });
+    } else {
+      // Save new shape entry
+      shapes.push({
+        id: Date.now(),
+        label: label || `Shape ${shapes.length + 1}`,
+        wkt: wkt
+      });
+    }
+
     localStorage.setItem('saved_wkt_shapes', JSON.stringify(shapes));
-    document.getElementById('shapeLabel').value = '';
     renderSavedList();
   }
 
@@ -304,19 +361,34 @@
     const shapes = getSavedShapes();
     const target = shapes.find(s => s.id === id);
     if (target) {
+      activeEditingId = target.id;
       document.getElementById('wktInput').value = target.wkt;
       document.getElementById('shapeLabel').value = target.label;
+      document.getElementById('saveBtn').innerText = '🔄 Update Saved Shape';
       plotWKTFromInput();
+      renderSavedList();
     }
   }
 
+  function clearActiveSelection() {
+    activeEditingId = null;
+    document.getElementById('wktInput').value = '';
+    document.getElementById('shapeLabel').value = '';
+    document.getElementById('saveBtn').innerText = '💾 Save Shape';
+    vectorSource.clear();
+    renderSavedList();
+  }
+
   function deleteShape(id) {
+    if (activeEditingId === id) {
+      clearActiveSelection();
+    }
     const shapes = getSavedShapes().filter(s => s.id !== id);
     localStorage.setItem('saved_wkt_shapes', JSON.stringify(shapes));
     renderSavedList();
   }
 
-  // Export to Word Document
+  // Word Document (.docx) Exporter with Robust Global Resolution
   async function exportToWord() {
     const wkt = document.getElementById('wktInput').value.trim();
     const label = document.getElementById('shapeLabel').value.trim() || 'Untitled Shape';
@@ -341,9 +413,10 @@
       const imgData = canvas.toDataURL('image/png');
       const imgBuffer = await fetch(imgData).then((res) => res.arrayBuffer());
 
-      const docxLib = window.docx?.default || window.docx;
+      // Safely resolve docx namespace across global browser window objects
+      const docxLib = window.docx;
       if (!docxLib || !docxLib.Document) {
-        throw new Error('docx library failed to load properly.');
+        throw new Error('docx library failed to load properly. Please verify internet connection.');
       }
 
       const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, Packer } = docxLib;
