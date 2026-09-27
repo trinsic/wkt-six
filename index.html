@@ -17,9 +17,51 @@
   <style>
     * { box-sizing: border-box; }
     body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
-    .layout { display: flex; height: 100vh; }
-    .sidebar { width: 340px; background: #f8fafc; border-right: 1px solid #cbd5e1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
-    .map-container { flex: 1; height: 100%; }
+    .layout { display: flex; height: 100vh; position: relative; overflow: hidden; }
+    
+    /* Collapsible Sidebar Styles */
+    .sidebar { 
+      width: 340px; 
+      min-width: 340px;
+      background: #f8fafc; 
+      border-right: 1px solid #cbd5e1; 
+      padding: 16px; 
+      overflow-y: auto; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+      transition: margin-left 0.3s ease;
+      z-index: 10;
+    }
+    .sidebar.collapsed {
+      margin-left: -340px;
+    }
+
+    /* Toggle Button */
+    .toggle-btn {
+      position: absolute;
+      top: 12px;
+      left: 348px;
+      z-index: 20;
+      width: 32px;
+      height: 32px;
+      background: #1e293b;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      transition: left 0.3s ease;
+    }
+    .sidebar.collapsed + .toggle-btn {
+      left: 8px;
+    }
+
+    .map-container { flex: 1; height: 100%; width: 100%; }
     label { font-size: 12px; font-weight: bold; }
     input, textarea, button { width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #cbd5e1; }
     textarea { font-family: monospace; resize: vertical; }
@@ -42,7 +84,7 @@
 
 <div class="layout">
   <!-- Sidebar -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <h2 style="margin:0; font-size: 18px;">WKT Playground</h2>
 
     <div>
@@ -69,15 +111,37 @@
     <div id="savedList" style="display:flex; flex-direction:column; gap:8px;"></div>
   </aside>
 
-  <!-- Map -->
+  <!-- Sidebar Collapse Toggle Button -->
+  <button class="toggle-btn" id="toggleBtn" onclick="toggleSidebar()" title="Toggle Sidebar">«</button>
+
+  <!-- Map Container -->
   <div id="map" class="map-container"></div>
 </div>
 
 <script>
-  // 1. Initialize OpenLayers Source & Layer
+  // 1. High-Contrast Styles for High Visibility & Easy Editing
+  const defaultStyle = new ol.style.Style({
+    fill: new ol.style.Fill({
+      color: 'rgba(6, 182, 212, 0.4)' // Bright Cyan fill
+    }),
+    stroke: new ol.style.Stroke({
+      color: '#0284c7', // Dark Cyan/Blue thick outline
+      width: 3
+    }),
+    image: new ol.style.Circle({
+      radius: 6,
+      fill: new ol.style.Fill({ color: '#2563eb' }),
+      stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
+    })
+  });
+
+  // 2. Initialize OpenLayers Source & Layer
   const wktFormat = new ol.format.WKT();
   const vectorSource = new ol.source.Vector();
-  const vectorLayer = new ol.layer.Vector({ source: vectorSource });
+  const vectorLayer = new ol.layer.Vector({ 
+    source: vectorSource,
+    style: defaultStyle
+  });
 
   const map = new ol.Map({
     target: 'map',
@@ -93,8 +157,17 @@
     })
   });
 
-  // 2. Add Modify Interaction for editing vertices dynamically
-  const modify = new ol.interaction.Modify({ source: vectorSource });
+  // 3. Add Modify Interaction with vertex highlight styling
+  const modify = new ol.interaction.Modify({ 
+    source: vectorSource,
+    style: new ol.style.Style({
+      image: new ol.style.Circle({
+        radius: 8,
+        fill: new ol.style.Fill({ color: '#ef4444' }), // Red vertex handles while dragging
+        stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
+      })
+    })
+  });
   map.addInteraction(modify);
 
   modify.on('modifyend', function () {
@@ -108,7 +181,24 @@
     }
   });
 
-  // 3. Draw Interaction Control
+  // 4. Sidebar Collapse Control
+  function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('toggleBtn');
+    
+    sidebar.classList.toggle('collapsed');
+    
+    if (sidebar.classList.contains('collapsed')) {
+      toggleBtn.innerText = '»';
+    } else {
+      toggleBtn.innerText = '«';
+    }
+    
+    // Trigger OpenLayers to resize map smoothly
+    setTimeout(() => { map.updateSize(); }, 300);
+  }
+
+  // 5. Draw Interaction Control
   let drawInteraction = null;
   function toggleDraw() {
     const drawBtn = document.getElementById('drawBtn');
@@ -121,7 +211,8 @@
       vectorSource.clear();
       drawInteraction = new ol.interaction.Draw({
         source: vectorSource,
-        type: 'Polygon'
+        type: 'Polygon',
+        style: defaultStyle
       });
       
       drawInteraction.on('drawend', function (e) {
@@ -139,7 +230,7 @@
     }
   }
 
-  // 4. Plot WKT string onto map
+  // 6. Plot WKT string onto map
   function plotWKTFromInput() {
     const wkt = document.getElementById('wktInput').value.trim();
     if (!wkt) return;
@@ -156,7 +247,7 @@
     }
   }
 
-  // 5. LocalStorage Handlers
+  // 7. LocalStorage Handlers
   function getSavedShapes() {
     return JSON.parse(localStorage.getItem('saved_wkt_shapes') || '[]');
   }
@@ -218,7 +309,7 @@
     renderSavedList();
   }
 
-  // 6. Word Document (.docx) Exporter
+  // 8. Word Document (.docx) Exporter
   async function exportToWord() {
     const wkt = document.getElementById('wktInput').value.trim();
     const label = document.getElementById('shapeLabel').value.trim() || 'Untitled Shape';
