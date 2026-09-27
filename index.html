@@ -143,7 +143,7 @@
 <script>
   // -------------------------------------------------------------
   // SUPABASE CONFIGURATION - Replace with your keys from Supabase
-  // -----------------------------------------------------------
+  // -------------------------------------------------------------
   const SUPABASE_URL = 'https://jknraumaovbguwphixle.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprbnJhdW1hb3ZiZ3V3cGhpeGxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0ODY2MDMsImV4cCI6MjEwNjA2MjYwM30.jhLr-2Pz5Mf2galJUP9zeuxyJuLHVgzJRc5k8Ai13As';
   const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -199,7 +199,7 @@
 
   // Supabase Database Fetching & Subscriptions
   async function fetchCloudShapes() {
-    const { data, error } = await supabaseClient.from('shapes').select('*').order('id', { ascending: false });
+    const { data, error } = await supabaseClient.from('shapes').select('*');
     if (error) {
       console.error('Error loading cloud shapes:', error);
       return;
@@ -276,7 +276,6 @@
         </div>
       `;
 
-      // Event Listeners attached directly using data-id attributes
       card.querySelector('.btn-load').addEventListener('click', (e) => {
         const id = e.target.getAttribute('data-id');
         loadShape(id);
@@ -292,7 +291,6 @@
   }
 
   function loadShape(id) {
-    // Explicit string matching ensures exact shape resolution
     const target = cachedShapes.find(s => String(s.id) === String(id));
     if (target) {
       activeEditingId = target.id;
@@ -403,6 +401,12 @@
 
     try {
       const canvas = await html2canvas(document.getElementById('map'), { useCORS: true, allowTaint: false, logging: false });
+      
+      // Calculate dynamic height to preserve exact canvas aspect ratio
+      const maxDocWidth = 550; // Max image width in points for Word document
+      const aspectRatio = canvas.height / canvas.width;
+      const calcHeight = Math.round(maxDocWidth * aspectRatio);
+
       const imgBuffer = await fetch(canvas.toDataURL('image/png')).then((res) => res.arrayBuffer());
       const docxLib = window.docx;
       if (!docxLib || !docxLib.Document) throw new Error('docx library unavailable.');
@@ -414,7 +418,7 @@
             new Paragraph({ children: [new TextRun({ text: 'WKT Shape Export Report', bold: true, size: 32, font: 'Arial' })], spacing: { after: 100 } }),
             new Paragraph({ children: [new TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 18, color: '6B7280', font: 'Arial' })], spacing: { after: 300 } }),
             new Paragraph({ children: [new TextRun({ text: '1. Map Visualization', bold: true, size: 24, font: 'Arial' })], spacing: { before: 200, after: 150 } }),
-            new Paragraph({ children: [new ImageRun({ data: imgBuffer, transformation: { width: 550, height: 310 } })], spacing: { after: 300 } }),
+            new Paragraph({ children: [new ImageRun({ data: imgBuffer, transformation: { width: maxDocWidth, height: calcHeight } })], spacing: { after: 300 } }),
             new Paragraph({ children: [new TextRun({ text: '2. Geometry Details', bold: true, size: 24, font: 'Arial' })], spacing: { before: 200, after: 150 } }),
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
