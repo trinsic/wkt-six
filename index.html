@@ -93,7 +93,7 @@
     })
   });
 
-  // 2. Add Modify Interaction for editing vertices
+  // 2. Add Modify Interaction for editing vertices dynamically
   const modify = new ol.interaction.Modify({ source: vectorSource });
   map.addInteraction(modify);
 
@@ -130,7 +130,7 @@
           featureProjection: 'EPSG:3857'
         });
         document.getElementById('wktInput').value = wkt;
-        toggleDraw(); // turn off draw mode when finished
+        toggleDraw();
       });
 
       map.addInteraction(drawInteraction);
@@ -224,7 +224,7 @@
     const label = document.getElementById('shapeLabel').value.trim() || 'Untitled Shape';
 
     if (!wkt) {
-      alert('Please plot a shape before exporting.');
+      alert('Please plot or draw a shape before exporting.');
       return;
     }
 
@@ -233,68 +233,117 @@
     btn.disabled = true;
 
     try {
-      // Screenshot map
-      const canvas = await html2canvas(document.getElementById('map'), { useCORS: true });
-      const imgData = canvas.toDataURL('image/png');
-      const imgBuffer = await fetch(imgData).then(res => res.arrayBuffer());
-
-      // Create Word document using docx library
-      const doc = new docx.Document({
-        sections: [{
-          children: [
-            new docx.Paragraph({
-              children: [new docx.TextRun({ text: "WKT Shape Export Report", bold: true, size: 32, font: "Arial" })],
-              spacing: { after: 100 }
-            }),
-            new docx.Paragraph({
-              children: [new docx.TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 18, color: "6B7280", font: "Arial" })],
-              spacing: { after: 300 }
-            }),
-            new docx.Paragraph({
-              children: [new docx.TextRun({ text: "1. Map Screenshot", bold: true, size: 24, font: "Arial" })],
-              spacing: { before: 200, after: 150 }
-            }),
-            new docx.Paragraph({
-              children: [new docx.ImageRun({ data: imgBuffer, transformation: { width: 550, height: 310 } })],
-              spacing: { after: 300 }
-            }),
-            new docx.Paragraph({
-              children: [new docx.TextRun({ text: "2. Geometry Details", bold: true, size: 24, font: "Arial" })],
-              spacing: { before: 200, after: 150 }
-            }),
-            new docx.Table({
-              width: { size: 100, type: docx.WidthType.PERCENTAGE },
-              rows: [
-                new docx.TableRow({
-                  children: [
-                    new docx.TableCell({ width: { size: 25, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: "Label:", bold: true })] })] }),
-                    new docx.TableCell({ width: { size: 75, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: label })] })] }),
-                  ]
-                }),
-                new docx.TableRow({
-                  children: [
-                    new docx.TableCell({ width: { size: 25, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: "WKT String:", bold: true })] })] }),
-                    new docx.TableCell({ width: { size: 75, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: wkt, font: "Courier New", size: 18 })] })] }),
-                  ]
-                })
-              ]
-            })
-          ]
-        }]
+      const mapElement = document.getElementById('map');
+      const canvas = await html2canvas(mapElement, {
+        useCORS: true,
+        allowTaint: false,
+        logging: false,
       });
 
-      const blob = await docx.Packer.toBlob(doc);
+      const imgData = canvas.toDataURL('image/png');
+      const imgBuffer = await fetch(imgData).then((res) => res.arrayBuffer());
+
+      const docxLib = window.docx || {};
+      const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, Packer } = docxLib;
+
+      if (!Document) {
+        throw new Error('docx library failed to load properly.');
+      }
+
+      const doc = new Document({
+        sections: [
+          {
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({ text: 'WKT Shape Export Report', bold: true, size: 32, font: 'Arial' }),
+                ],
+                spacing: { after: 100 },
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: `Generated: ${new Date().toLocaleString()} | OpenStreetMap WKT Playground`,
+                    size: 18,
+                    color: '6B7280',
+                    font: 'Arial',
+                  }),
+                ],
+                spacing: { after: 300 },
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: '1. Map Visualization', bold: true, size: 24, font: 'Arial' }),
+                ],
+                spacing: { before: 200, after: 150 },
+              }),
+              new Paragraph({
+                children: [
+                  new ImageRun({
+                    data: imgBuffer,
+                    transformation: { width: 550, height: 310 },
+                  }),
+                ],
+                spacing: { after: 300 },
+              }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: '2. Geometry Details', bold: true, size: 24, font: 'Arial' }),
+                ],
+                spacing: { before: 200, after: 150 },
+              }),
+              new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                rows: [
+                  new TableRow({
+                    children: [
+                      new TableCell({
+                        width: { size: 25, type: WidthType.PERCENTAGE },
+                        children: [new Paragraph({ children: [new TextRun({ text: 'Label:', bold: true, font: 'Arial' })] })],
+                      }),
+                      new TableCell({
+                        width: { size: 75, type: WidthType.PERCENTAGE },
+                        children: [new Paragraph({ children: [new TextRun({ text: label, font: 'Arial' })] })],
+                      }),
+                    ],
+                  }),
+                  new TableRow({
+                    children: [
+                      new TableCell({
+                        width: { size: 25, type: WidthType.PERCENTAGE },
+                        children: [new Paragraph({ children: [new TextRun({ text: 'WKT String:', bold: true, font: 'Arial' })] })],
+                      }),
+                      new TableCell({
+                        width: { size: 75, type: WidthType.PERCENTAGE },
+                        children: [
+                          new Paragraph({
+                            children: [
+                              new TextRun({ text: wkt, font: 'Courier New', size: 18, color: '1E3A8A' }),
+                            ],
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          },
+        ],
+      });
+
+      const blob = await Packer.toBlob(doc);
       saveAs(blob, `${label.toLowerCase().replace(/\s+/g, '-')}.docx`);
-    } catch (e) {
-      console.error(e);
-      alert('Error exporting Word document.');
+    } catch (err) {
+      console.error('Word export failed:', err);
+      alert('Export failed: ' + err.message);
     } finally {
       btn.innerText = '📄 Export Word Document';
       btn.disabled = false;
     }
   }
 
-  // Initial load
+  // Initial render of saved shapes on page load
   renderSavedList();
 </script>
 </body>
