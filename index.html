@@ -143,7 +143,7 @@
 <script>
   // -------------------------------------------------------------
   // SUPABASE CONFIGURATION - Replace with your keys from Supabase
-  // -------------------------------------------------------------
+  // -----------------------------------------------------------
   const SUPABASE_URL = 'https://jknraumaovbguwphixle.supabase.co';
   const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprbnJhdW1hb3ZiZ3V3cGhpeGxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA0ODY2MDMsImV4cCI6MjEwNjA2MjYwM30.jhLr-2Pz5Mf2galJUP9zeuxyJuLHVgzJRc5k8Ai13As';
   const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -199,7 +199,7 @@
 
   // Supabase Database Fetching & Subscriptions
   async function fetchCloudShapes() {
-    const { data, error } = await supabaseClient.from('shapes').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabaseClient.from('shapes').select('*').order('id', { ascending: false });
     if (error) {
       console.error('Error loading cloud shapes:', error);
       return;
@@ -241,14 +241,14 @@
     }
 
     saveBtn.disabled = false;
-    fetchCloudShapes();
+    await fetchCloudShapes();
   }
 
   async function deleteShape(id) {
-    if (activeEditingId === id) clearActiveSelection();
+    if (String(activeEditingId) === String(id)) clearActiveSelection();
     const { error } = await supabaseClient.from('shapes').delete().eq('id', id);
     if (error) alert('Error deleting shape: ' + error.message);
-    fetchCloudShapes();
+    await fetchCloudShapes();
   }
 
   function renderSavedList() {
@@ -262,21 +262,37 @@
 
     cachedShapes.forEach(item => {
       const card = document.createElement('div');
-      const isActive = item.id === activeEditingId;
+      const isActive = String(item.id) === String(activeEditingId);
       card.className = `saved-card ${isActive ? 'active-card' : ''}`;
+      
       card.innerHTML = `
-        <div style="font-weight:bold; font-size:13px;">${item.label}</div>
-        <div class="saved-wkt">${item.wkt}</div>
+        <div style="font-weight:bold; font-size:13px;">
+          ${escapeHtml(item.label)} ${isActive ? '<span style="font-size:10px; color:#6366f1;">(Editing)</span>' : ''}
+        </div>
+        <div class="saved-wkt">${escapeHtml(item.wkt)}</div>
         <div class="card-actions">
-          <button class="btn-sm btn-load" onclick="loadShape('${item.id}')">Load & Edit</button>
-          <button class="btn-sm btn-del" onclick="deleteShape('${item.id}')">Delete</button>
+          <button class="btn-sm btn-load" data-id="${item.id}">Load & Edit</button>
+          <button class="btn-sm btn-del" data-id="${item.id}">Delete</button>
         </div>
       `;
+
+      // Event Listeners attached directly using data-id attributes
+      card.querySelector('.btn-load').addEventListener('click', (e) => {
+        const id = e.target.getAttribute('data-id');
+        loadShape(id);
+      });
+
+      card.querySelector('.btn-del').addEventListener('click', (e) => {
+        const id = e.target.getAttribute('data-id');
+        deleteShape(id);
+      });
+
       list.appendChild(card);
     });
   }
 
   function loadShape(id) {
+    // Explicit string matching ensures exact shape resolution
     const target = cachedShapes.find(s => String(s.id) === String(id));
     if (target) {
       activeEditingId = target.id;
@@ -295,6 +311,10 @@
     document.getElementById('saveBtn').innerText = '💾 Save to Cloud';
     vectorSource.clear();
     renderSavedList();
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function copyShareableLink() {
@@ -387,7 +407,7 @@
       const docxLib = window.docx;
       if (!docxLib || !docxLib.Document) throw new Error('docx library unavailable.');
 
-      const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, Packer } = docxLib;
+      const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType } = docxLib;
       const doc = new Document({
         sections: [{
           children: [
@@ -413,7 +433,7 @@
         }]
       });
 
-      const blob = await Packer.toBlob(doc);
+      const blob = await docxLib.Packer.toBlob(doc);
       saveAs(blob, `${label.toLowerCase().replace(/\s+/g, '-')}.docx`);
     } catch (err) {
       alert('Export failed: ' + err.message);
