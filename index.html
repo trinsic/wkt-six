@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenStreetMap WKT Playground</title>
+
+  <!-- OpenLayers CSS & JS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v7.3.0/ol.css" />
+  <script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
+
+  <!-- Helper Libraries for Screenshots & Word Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+    .layout { display: flex; height: 100vh; }
+    .sidebar { width: 340px; background: #f8fafc; border-right: 1px solid #cbd5e1; padding: 16px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+    .map-container { flex: 1; height: 100%; }
+    label { font-size: 12px; font-weight: bold; }
+    input, textarea, button { width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #cbd5e1; }
+    textarea { font-family: monospace; resize: vertical; }
+    button { cursor: pointer; border: none; font-weight: bold; color: white; background: #3b82f6; }
+    button:hover { opacity: 0.9; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-draw { background: #10b981; }
+    .btn-draw.active { background: #ef4444; }
+    .btn-save { background: #6366f1; }
+    .btn-export { background: #059669; }
+    .saved-card { background: white; border: 1px solid #cbd5e1; padding: 10px; border-radius: 4px; }
+    .saved-wkt { font-family: monospace; font-size: 11px; color: #64748b; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; margin: 4px 0 8px; }
+    .card-actions { display: flex; gap: 6px; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .btn-del { background: #ef4444; }
+    .btn-load { background: #3b82f6; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <h2 style="margin:0; font-size: 18px;">WKT Playground</h2>
+
+    <div>
+      <label>Shape Label</label>
+      <input type="text" id="shapeLabel" placeholder="e.g. Downtown District" />
+    </div>
+
+    <div>
+      <label>WKT Text</label>
+      <textarea id="wktInput" rows="5" placeholder="POLYGON((...))"></textarea>
+    </div>
+
+    <div class="btn-row">
+      <button onclick="plotWKTFromInput()">Plot Shape</button>
+      <button id="drawBtn" class="btn-draw" onclick="toggleDraw()">✏️ Draw Polygon</button>
+    </div>
+
+    <button class="btn-save" onclick="saveCurrentShape()">💾 Save to List</button>
+    <button class="btn-export" id="exportBtn" onclick="exportToWord()">📄 Export Word Document</button>
+
+    <hr style="width:100%; border:0; border-top: 1px solid #cbd5e1; margin: 4px 0;" />
+
+    <label>Saved Shapes</label>
+    <div id="savedList" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </aside>
+
+  <!-- Map -->
+  <div id="map" class="map-container"></div>
+</div>
+
+<script>
+  // 1. Initialize OpenLayers Source & Layer
+  const wktFormat = new ol.format.WKT();
+  const vectorSource = new ol.source.Vector();
+  const vectorLayer = new ol.layer.Vector({ source: vectorSource });
+
+  const map = new ol.Map({
+    target: 'map',
+    layers: [
+      new ol.layer.Tile({
+        source: new ol.source.OSM({ crossOrigin: 'anonymous' })
+      }),
+      vectorLayer
+    ],
+    view: new ol.View({
+      center: ol.proj.fromLonLat([0, 0]),
+      zoom: 2
+    })
+  });
+
+  // 2. Add Modify Interaction for editing vertices
+  const modify = new ol.interaction.Modify({ source: vectorSource });
+  map.addInteraction(modify);
+
+  modify.on('modifyend', function () {
+    const features = vectorSource.getFeatures();
+    if (features.length > 0) {
+      const updatedWkt = wktFormat.writeFeature(features[0], {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857'
+      });
+      document.getElementById('wktInput').value = updatedWkt;
+    }
+  });
+
+  // 3. Draw Interaction Control
+  let drawInteraction = null;
+  function toggleDraw() {
+    const drawBtn = document.getElementById('drawBtn');
+    if (drawInteraction) {
+      map.removeInteraction(drawInteraction);
+      drawInteraction = null;
+      drawBtn.innerText = '✏️ Draw Polygon';
+      drawBtn.classList.remove('active');
+    } else {
+      vectorSource.clear();
+      drawInteraction = new ol.interaction.Draw({
+        source: vectorSource,
+        type: 'Polygon'
+      });
+      
+      drawInteraction.on('drawend', function (e) {
+        const wkt = wktFormat.writeFeature(e.feature, {
+          dataProjection: 'EPSG:4326',
+          featureProjection: 'EPSG:3857'
+        });
+        document.getElementById('wktInput').value = wkt;
+        toggleDraw(); // turn off draw mode when finished
+      });
+
+      map.addInteraction(drawInteraction);
+      drawBtn.innerText = 'Cancel Drawing';
+      drawBtn.classList.add('active');
+    }
+  }
+
+  // 4. Plot WKT string onto map
+  function plotWKTFromInput() {
+    const wkt = document.getElementById('wktInput').value.trim();
+    if (!wkt) return;
+    try {
+      vectorSource.clear();
+      const feature = wktFormat.readFeature(wkt, {
+        dataProjection: 'EPSG:4326',
+        featureProjection: 'EPSG:3857'
+      });
+      vectorSource.addFeature(feature);
+      map.getView().fit(feature.getGeometry().getExtent(), { padding: [50, 50, 50, 50] });
+    } catch (e) {
+      alert('Invalid WKT geometry format.');
+    }
+  }
+
+  // 5. LocalStorage Handlers
+  function getSavedShapes() {
+    return JSON.parse(localStorage.getItem('saved_wkt_shapes') || '[]');
+  }
+
+  function renderSavedList() {
+    const list = document.getElementById('savedList');
+    const shapes = getSavedShapes();
+    list.innerHTML = '';
+
+    if (shapes.length === 0) {
+      list.innerHTML = '<span style="font-size:12px; color:#64748b;">No saved shapes.</span>';
+      return;
+    }
+
+    shapes.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'saved-card';
+      card.innerHTML = `
+        <div style="font-weight:bold; font-size:13px;">${item.label}</div>
+        <div class="saved-wkt">${item.wkt}</div>
+        <div class="card-actions">
+          <button class="btn-sm btn-load" onclick="loadShape(${item.id})">Load & Edit</button>
+          <button class="btn-sm btn-del" onclick="deleteShape(${item.id})">Delete</button>
+        </div>
+      `;
+      list.appendChild(card);
+    });
+  }
+
+  function saveCurrentShape() {
+    const wkt = document.getElementById('wktInput').value.trim();
+    const label = document.getElementById('shapeLabel').value.trim();
+    if (!wkt) return;
+
+    const shapes = getSavedShapes();
+    shapes.push({
+      id: Date.now(),
+      label: label || `Shape ${shapes.length + 1}`,
+      wkt: wkt
+    });
+    localStorage.setItem('saved_wkt_shapes', JSON.stringify(shapes));
+    document.getElementById('shapeLabel').value = '';
+    renderSavedList();
+  }
+
+  function loadShape(id) {
+    const shapes = getSavedShapes();
+    const target = shapes.find(s => s.id === id);
+    if (target) {
+      document.getElementById('wktInput').value = target.wkt;
+      document.getElementById('shapeLabel').value = target.label;
+      plotWKTFromInput();
+    }
+  }
+
+  function deleteShape(id) {
+    const shapes = getSavedShapes().filter(s => s.id !== id);
+    localStorage.setItem('saved_wkt_shapes', JSON.stringify(shapes));
+    renderSavedList();
+  }
+
+  // 6. Word Document (.docx) Exporter
+  async function exportToWord() {
+    const wkt = document.getElementById('wktInput').value.trim();
+    const label = document.getElementById('shapeLabel').value.trim() || 'Untitled Shape';
+
+    if (!wkt) {
+      alert('Please plot a shape before exporting.');
+      return;
+    }
+
+    const btn = document.getElementById('exportBtn');
+    btn.innerText = 'Generating Word Doc...';
+    btn.disabled = true;
+
+    try {
+      // Screenshot map
+      const canvas = await html2canvas(document.getElementById('map'), { useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const imgBuffer = await fetch(imgData).then(res => res.arrayBuffer());
+
+      // Create Word document using docx library
+      const doc = new docx.Document({
+        sections: [{
+          children: [
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: "WKT Shape Export Report", bold: true, size: 32, font: "Arial" })],
+              spacing: { after: 100 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: `Generated: ${new Date().toLocaleString()}`, size: 18, color: "6B7280", font: "Arial" })],
+              spacing: { after: 300 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: "1. Map Screenshot", bold: true, size: 24, font: "Arial" })],
+              spacing: { before: 200, after: 150 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.ImageRun({ data: imgBuffer, transformation: { width: 550, height: 310 } })],
+              spacing: { after: 300 }
+            }),
+            new docx.Paragraph({
+              children: [new docx.TextRun({ text: "2. Geometry Details", bold: true, size: 24, font: "Arial" })],
+              spacing: { before: 200, after: 150 }
+            }),
+            new docx.Table({
+              width: { size: 100, type: docx.WidthType.PERCENTAGE },
+              rows: [
+                new docx.TableRow({
+                  children: [
+                    new docx.TableCell({ width: { size: 25, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: "Label:", bold: true })] })] }),
+                    new docx.TableCell({ width: { size: 75, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: label })] })] }),
+                  ]
+                }),
+                new docx.TableRow({
+                  children: [
+                    new docx.TableCell({ width: { size: 25, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: "WKT String:", bold: true })] })] }),
+                    new docx.TableCell({ width: { size: 75, type: docx.WidthType.PERCENTAGE }, children: [new docx.Paragraph({ children: [new docx.TextRun({ text: wkt, font: "Courier New", size: 18 })] })] }),
+                  ]
+                })
+              ]
+            })
+          ]
+        }]
+      });
+
+      const blob = await docx.Packer.toBlob(doc);
+      saveAs(blob, `${label.toLowerCase().replace(/\s+/g, '-')}.docx`);
+    } catch (e) {
+      console.error(e);
+      alert('Error exporting Word document.');
+    } finally {
+      btn.innerText = '📄 Export Word Document';
+      btn.disabled = false;
+    }
+  }
+
+  // Initial load
+  renderSavedList();
+</script>
+</body>
+</html>
