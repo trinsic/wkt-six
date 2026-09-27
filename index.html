@@ -11,7 +11,15 @@
 
   <!-- Helper Libraries for Screenshots & Word Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  
+  <!-- docx library with fallback -->
   <script src="https://cdn.jsdelivr.net/npm/docx@8.2.2/build/index.js"></script>
+  <script>
+    if (typeof window.docx === 'undefined') {
+      document.write('<script src="https://unpkg.com/docx@8.2.2/build/index.js"><\/script>');
+    }
+  </script>
+
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 
   <style>
@@ -37,10 +45,10 @@
       margin-left: -340px;
     }
 
-    /* Toggle Button */
+    /* Toggle Button Positioned Below Zoom Controls */
     .toggle-btn {
       position: absolute;
-      top: 12px;
+      top: 80px; /* Shifted down to clear map zoom (+/-) controls */
       left: 348px;
       z-index: 20;
       width: 32px;
@@ -119,13 +127,13 @@
 </div>
 
 <script>
-  // 1. High-Contrast Styles for High Visibility & Easy Editing
+  // High-Contrast Vector Styling
   const defaultStyle = new ol.style.Style({
     fill: new ol.style.Fill({
-      color: 'rgba(6, 182, 212, 0.4)' // Bright Cyan fill
+      color: 'rgba(6, 182, 212, 0.4)'
     }),
     stroke: new ol.style.Stroke({
-      color: '#0284c7', // Dark Cyan/Blue thick outline
+      color: '#0284c7',
       width: 3
     }),
     image: new ol.style.Circle({
@@ -135,7 +143,7 @@
     })
   });
 
-  // 2. Initialize OpenLayers Source & Layer
+  // OpenLayers Setup
   const wktFormat = new ol.format.WKT();
   const vectorSource = new ol.source.Vector();
   const vectorLayer = new ol.layer.Vector({ 
@@ -157,13 +165,13 @@
     })
   });
 
-  // 3. Add Modify Interaction with vertex highlight styling
+  // Modify Interaction for Shape Editing
   const modify = new ol.interaction.Modify({ 
     source: vectorSource,
     style: new ol.style.Style({
       image: new ol.style.Circle({
         radius: 8,
-        fill: new ol.style.Fill({ color: '#ef4444' }), // Red vertex handles while dragging
+        fill: new ol.style.Fill({ color: '#ef4444' }),
         stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 })
       })
     })
@@ -181,7 +189,7 @@
     }
   });
 
-  // 4. Sidebar Collapse Control
+  // Sidebar Collapse Function
   function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('toggleBtn');
@@ -194,11 +202,10 @@
       toggleBtn.innerText = '«';
     }
     
-    // Trigger OpenLayers to resize map smoothly
     setTimeout(() => { map.updateSize(); }, 300);
   }
 
-  // 5. Draw Interaction Control
+  // Draw Functionality
   let drawInteraction = null;
   function toggleDraw() {
     const drawBtn = document.getElementById('drawBtn');
@@ -230,7 +237,7 @@
     }
   }
 
-  // 6. Plot WKT string onto map
+  // WKT Rendering
   function plotWKTFromInput() {
     const wkt = document.getElementById('wktInput').value.trim();
     if (!wkt) return;
@@ -247,7 +254,7 @@
     }
   }
 
-  // 7. LocalStorage Handlers
+  // LocalStorage Controls
   function getSavedShapes() {
     return JSON.parse(localStorage.getItem('saved_wkt_shapes') || '[]');
   }
@@ -309,7 +316,7 @@
     renderSavedList();
   }
 
-  // 8. Word Document (.docx) Exporter
+  // Export to Word Document
   async function exportToWord() {
     const wkt = document.getElementById('wktInput').value.trim();
     const label = document.getElementById('shapeLabel').value.trim() || 'Untitled Shape';
@@ -334,12 +341,12 @@
       const imgData = canvas.toDataURL('image/png');
       const imgBuffer = await fetch(imgData).then((res) => res.arrayBuffer());
 
-      const docxLib = window.docx || {};
-      const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, Packer } = docxLib;
-
-      if (!Document) {
+      const docxLib = window.docx?.default || window.docx;
+      if (!docxLib || !docxLib.Document) {
         throw new Error('docx library failed to load properly.');
       }
+
+      const { Document, Paragraph, TextRun, ImageRun, Table, TableRow, TableCell, WidthType, Packer } = docxLib;
 
       const doc = new Document({
         sections: [
@@ -434,7 +441,7 @@
     }
   }
 
-  // Initial render of saved shapes on page load
+  // Initial render
   renderSavedList();
 </script>
 </body>
