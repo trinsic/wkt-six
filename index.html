@@ -10,6 +10,36 @@
   <script src="https://cdn.jsdelivr.net/npm/ol@v7.3.0/dist/ol.js"></script>
 
   <!-- Supabase JS Client -->
+  <script>
+    // Function to handle login
+async function loginUser(email, password) {
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email: email,
+    password: password
+  });
+
+  if (error) {
+    alert("Login failed: " + error.message);
+  } else {
+    location.reload(); // Reload page once authenticated
+  }
+}
+
+// Function to check if user is logged in
+async function checkUserSession() {
+  const { data: { user } } = await supabaseClient.auth.getUser();
+  if (!user) {
+    // Show login form modal or redirect to login
+    document.getElementById('sidebar').style.display = 'none';
+    const email = prompt("Enter authorized email:");
+    const pass = prompt("Enter password:");
+    await loginUser(email, pass);
+  }
+}
+
+// Run session check on initialization
+checkUserSession();
+  </script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <!-- Helper Libraries for Screenshots & Word Export -->
